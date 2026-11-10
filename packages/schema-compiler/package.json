@@ -1,0 +1,41 @@
+{
+  "name": "@ghost-acoustics/schema-compiler",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ghostc: compiles JSON message schemas into bit-packed TypeScript serializers with exact wire size and airtime.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ghostc": "./bin/ghostc.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./generated/types": {
+      "types": "./generated/types.ts",
+      "default": "./generated/types.ts"
+    },
+    "./generated/serializers": {
+      "types": "./generated/serializers.ts",
+      "default": "./generated/serializers.ts"
+    },
+    "./generated/opcodes": {
+      "types": "./generated/opcodes.ts",
+      "default": "./generated/opcodes.ts"
+    }
+  },
+  "scripts": {
+    "compile": "tsx bin/ghostc.ts compile --schemas schemas --out generated",
+    "check": "tsx bin/ghostc.ts check schemas/*.schema.json",
+    "test:pbt": "tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ghost-acoustics/core": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
+}

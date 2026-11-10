@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GhostAcoustics Physical Spike</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #101418; color: #e6edf3; max-width: 720px; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    p.sub { margin: 0 0 20px; color: #9aa7b4; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    button { padding: 10px 16px; font-size: 1rem; border: 1px solid #3d4a57; border-radius: 6px;
+             background: #1c2630; color: inherit; cursor: pointer; }
+    button:hover:enabled { background: #26364a; }
+    button:focus-visible { outline: 3px solid #58a6ff; outline-offset: 2px; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }
+    dt { color: #9aa7b4; }
+    dd { margin: 0; font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+    .yes { color: #3fb950; } .no { color: #f85149; }
+    pre { background: #0b0e11; padding: 12px; border-radius: 6px; max-height: 220px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>GhostAcoustics physical spike</h1>
+  <p class="sub">Transmit a 16-byte framed datagram on one device and decode it on another (or loop back across two tabs/devices).</p>
+
+  <div class="row">
+    <button id="btn-listen" type="button" disabled>Activate Microphone Listener</button>
+    <button id="btn-tx" type="button" disabled>Transmit 16-Byte Test Frame</button>
+  </div>
+
+  <dl aria-live="polite">
+    <dt>State</dt><dd id="st-state">LOADING</dd>
+    <dt>Listening</dt><dd id="st-listening" class="no">NO</dd>
+    <dt>Decoded Payload</dt><dd id="st-payload">[none]</dd>
+    <dt>CRC Match</dt><dd id="st-crc">-</dd>
+    <dt>Self-interference drops</dt><dd id="st-drops">0</dd>
+  </dl>
+
+  <h2 style="font-size:1rem;margin-top:24px">Log</h2>
+  <pre id="log" aria-label="Event log"></pre>
+
+  <!-- ggwave WASM build (exposes global ggwave_factory) -->
+  <script src="https://ggwave-js.ggerganov.com/ggwave.js"></script>
+  <script type="module">
+    // @ts-check
+    /**
+     * Standalone spike. Framing mirrors .kiro/specs/spec_01_frame_packing.md:
+     * sync(2) session(1) seq(1) flags(1) opcode(1) length(1) payload(N) crc32(4), big-endian.
+     */
+
+    /** @typedef {'LOADING'|'IDLE'|'LISTENING'|'TRANSMITTING'|'DRAINING'} LinkState */
+
+    const SYNC = 0xAA55;
+    const HEADER_LEN = 7;
+    const CRC_LEN = 4;
+    const MAX_FRAME = 64;
+    const SINGLE_FRAME_BUDGET_BYTES = 32;
+    const TX_VOLUME = 25; // ggwave volume 0-100, kept moderate to avoid clipping
+    const REVERB_TAIL_MS = 250; // minimum guard after playback ends
+    const RX_BUFFER_SIZE = 1024;
+
+    /** @type {Record<string, HTMLElement>} */
+    const ui = {};
+    for (const id of ['btn-listen', 'btn-tx', 'st-state', 'st-listening', 'st-payload', 'st-crc', 'st-drops', 'log']) {
+      const el = document.getElementById(id);
+      if (!el) throw new Error(`Missing element #${id}`);
+      ui[id] = el;
+    }
+
+    /** @param {string} msg */
+    function log(msg) {
+      ui['log'].textContent += `${new Date().toISOString().slice(11, 23)}  ${msg}\n`;
+      ui['log'].scrollTop = ui['log'].scrollHeight;
+    }
+
+    // ---- CRC-32 (IEEE 802.3, reflected 0xEDB88320) ----
+    const CRC_TABLE = (() => {
+      const t = new Uint32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        t[n] = c >>> 0;
+      }
+      return t;
+    })();
+
+    /** @param {Uint8Array} bytes @returns {number} */
+    function crc32(bytes) {
+      let c = 0xFFFFFFFF;
+      for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8);
+      return (c ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    // ---- Framing ----
+    /**
+     * @param {{session:number, seq:number, flags:number, opcode:number, payload:Uint8Array}} f
+     * @returns {Uint8Array}
+     */
+    function encodeFrame(f) {
+      const total = HEADER_LEN + f.payload.length + CRC_LEN;
+      if (total > MAX_FRAME) throw new Error('PayloadTooLarge');
+      if (total > SINGLE_FRAME_BUDGET_BYTES) throw new Error('BudgetExceeded');
+      const out = new Uint8Array(total);
+      const view = new DataView(out.buffer);
+      view.setUint16(0, SYNC);
+      out[2] = f.session; out[3] = f.seq; out[4] = f.flags; out[5] = f.opcode;
+      out[6] = f.payload.length;
+      out.set(f.payload, HEADER_LEN);
+      view.setUint32(total - CRC_LEN, crc32(out.subarray(0, total - CRC_LEN)));
+      return out;
+    }
+
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {{ok:true, payload:Uint8Array}|{ok:false, error:string}}
+     */
+    function decodeFrame(bytes) {
+      if (bytes.length < HEADER_LEN + CRC_LEN || bytes.length > MAX_FRAME) return { ok: false, error: 'BadLength' };
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      if (view.getUint16(0) !== SYNC) return { ok: false, error: 'BadSync' };
+      if (bytes[6] !== bytes.length - HEADER_LEN - CRC_LEN) return { ok: false, error: 'BadLength' };
+      const body = bytes.subarray(0, bytes.length - CRC_LEN);
+      if (crc32(body) !== view.getUint32(bytes.length - CRC_LEN)) return { ok: false, error: 'BadCrc' };
+      return { ok: true, payload: bytes.slice(HEADER_LEN, bytes.length - CRC_LEN) };
+    }
+
+    /** @param {Uint8Array} b @returns {string} */
+    const toHex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+
+    // ---- Link state (half-duplex) ----
+    /** @type {LinkState} */
+    let state = 'LOADING';
+    let drops = 0;
+    /** @param {LinkState} next */
+    function setState(next) {
+      state = next;
+      ui['st-state'].textContent = next;
+      ui['btn-tx'].toggleAttribute('disabled', next === 'LOADING' || next === 'TRANSMITTING' || next === 'DRAINING');
+    }
+
+    // ---- ggwave + WebAudio ----
+    /** @type {any} */ let ggwave = null;
+    /** @type {number} */ let ggInstance = 0;
+    /** @type {AudioContext} */ const ctx = new AudioContext();
+    /** @type {ScriptProcessorNode|null} */ let processor = null;
+    let seq = 0;
+
+    /** @param {Int8Array} raw @returns {Float32Array} */
+    const asFloat32 = (raw) => new Float32Array(raw.slice().buffer);
+    /** @param {Float32Array} f @returns {Int8Array} */
+    const asInt8 = (f) => new Int8Array(f.buffer, f.byteOffset, f.byteLength);
+
+    async function initGgwave() {
+      // @ts-ignore global injected by ggwave.js
+      ggwave = await ggwave_factory();
+      const params = ggwave.getDefaultParameters();
+      params.sampleRateInp = ctx.sampleRate;
+      params.sampleRateOut = ctx.sampleRate;
+      ggInstance = ggwave.init(params);
+      setState('IDLE');
+      ui['btn-listen'].removeAttribute('disabled');
+      ui['btn-tx'].removeAttribute('disabled');
+      log(`ggwave ready @ ${ctx.sampleRate} Hz`);
+    }
+
+    /** @param {Uint8Array} bytes */
+    function showRx(bytes) {
+      const result = decodeFrame(bytes);
+      ui['st-payload'].textContent = `[${toHex(result.ok ? result.payload : bytes)}]`;
+      ui['st-crc'].textContent = result.ok ? 'YES' : `NO (${result.error})`;
+      ui['st-crc'].className = result.ok ? 'yes' : 'no';
+      log(`RX ${bytes.length}B ${result.ok ? 'ok' : result.error}`);
+    }
+
+    /** @param {AudioProcessingEvent} e */
+    function onAudio(e) {
+      const samples = new Float32Array(e.inputBuffer.getChannelData(0));
+      const res = ggwave.decode(ggInstance, asInt8(samples));
+      if (!res || res.length === 0) return;
+      // Half-duplex guard: frames heard while transmitting/draining are our own echo.
+      if (state === 'TRANSMITTING' || state === 'DRAINING') {
+        ui['st-drops'].textContent = String(++drops);
+        log('Dropped self-interference frame');
+        return;
+      }
+      showRx(new Uint8Array(res));
+    }
+
+    async function activateListener() {
+      /** @type {MediaStreamConstraints} */
+      const constraints = {
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+        video: false,
+      };
+      await ctx.resume();
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const settings = stream.getAudioTracks()[0].getSettings();
+      for (const key of /** @type {const} */ (['echoCancellation', 'noiseSuppression', 'autoGainControl'])) {
+        if (settings[key] !== false) log(`WARNING: browser left ${key} = ${settings[key]}`);
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      // ScriptProcessor keeps the spike single-file; the real runtime will use AudioWorklet.
+      processor = ctx.createScriptProcessor(RX_BUFFER_SIZE, 1, 1);
+      processor.onaudioprocess = onAudio;
+      const mute = ctx.createGain(); // keep the node pulled without playing mic audio out
+      mute.gain.value = 0;
+      source.connect(processor);
+      processor.connect(mute);
+      mute.connect(ctx.destination);
+      setState('LISTENING');
+      ui['st-listening'].textContent = 'YES';
+      ui['st-listening'].className = 'yes';
+      ui['btn-listen'].setAttribute('disabled', '');
+      log('Microphone listener active (echo/noise/AGC off)');
+    }
+
+    async function transmitTestFrame() {
+      const wasListening = processor !== null;
+      const payload = new TextEncoder().encode('GHOST'); // 5 bytes -> 16-byte frame
+      const frame = encodeFrame({ session: 1, seq: seq++ & 0xFF, flags: 0, opcode: 0x10, payload });
+      log(`TX ${frame.length}B: ${toHex(frame)}`);
+
+      setState('TRANSMITTING');
+      const wave = asFloat32(ggwave.encode(ggInstance, frame, ggwave.ProtocolId.GGWAVE_PROTOCOL_AUDIBLE_FAST, TX_VOLUME));
+      const buffer = ctx.createBuffer(1, wave.length, ctx.sampleRate);
+      buffer.getChannelData(0).set(wave);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+
+      await new Promise((resolve) => { src.onended = resolve; src.start(); });
+
+      setState('DRAINING');
+      const latencyMs = ((ctx.outputLatency || ctx.baseLatency || 0) * 1000);
+      await new Promise((r) => setTimeout(r, latencyMs + REVERB_TAIL_MS));
+      setState(wasListening ? 'LISTENING' : 'IDLE');
+      log('TX complete, link drained');
+    }
+
+    ui['btn-listen'].addEventListener('click', () => activateListener().catch((err) => log(`ERROR: ${err}`)));
+    ui['btn-tx'].addEventListener('click', () => transmitTestFrame().catch((err) => { log(`ERROR: ${err}`); setState('IDLE'); }));
+    ui['st-drops'].textContent = String(drops);
+
+    initGgwave().catch((err) => log(`ggwave init failed: ${err}`));
+  </script>
+</body>
+</html>

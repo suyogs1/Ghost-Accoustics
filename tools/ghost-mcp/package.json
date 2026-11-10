@@ -1,0 +1,21 @@
+{
+  "name": "@ghost-acoustics/ghost-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local MCP server (stdio) for airtime budgeting, channel noise simulation, packet inspection and PBT runs.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ghost-mcp": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ghost-acoustics/core": "workspace:*",
+    "@ghost-acoustics/schema-compiler": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  }
+}

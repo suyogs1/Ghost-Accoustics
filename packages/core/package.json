@@ -1,0 +1,42 @@
+{
+  "name": "@ghost-acoustics/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "GhostAcoustics transport: binary framing, half-duplex acoustic socket, loopback and WebAudio channels.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "default": "./src/constants.ts"
+    },
+    "./airtime": {
+      "types": "./src/airtime.ts",
+      "default": "./src/airtime.ts"
+    },
+    "./frame": {
+      "types": "./src/frame.ts",
+      "default": "./src/frame.ts"
+    },
+    "./crc32": {
+      "types": "./src/crc32.ts",
+      "default": "./src/crc32.ts"
+    },
+    "./test-utils/pbt": {
+      "types": "./test-utils/pbt.ts",
+      "default": "./test-utils/pbt.ts"
+    }
+  },
+  "scripts": {
+    "test:pbt": "tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
+}

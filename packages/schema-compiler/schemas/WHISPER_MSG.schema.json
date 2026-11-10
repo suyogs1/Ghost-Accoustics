@@ -1,0 +1,10 @@
+{
+  "name": "WHISPER_MSG",
+  "opcode": "0x20",
+  "description": "Addressed text message. The text length is implied by the frame, so shorter messages cost less airtime.",
+  "fields": [
+    { "name": "senderId", "type": "uint8", "description": "Sender node ID (1-255)" },
+    { "name": "msgId", "type": "uint8", "description": "Per-sender message counter, wraps at 256" },
+    { "name": "text", "type": "bytes", "maxLength": 14, "description": "UTF-8 text, 0-14 bytes" }
+  ]
+}

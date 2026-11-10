@@ -1,0 +1,10 @@
+{
+  "name": "VENUE_CUE",
+  "opcode": "0x10",
+  "description": "Broadcast cue that synchronizes lyrics, effects and alerts across listener devices.",
+  "fields": [
+    { "name": "cueId", "type": "uint16", "description": "Cue identifier (0-65535)" },
+    { "name": "stageState", "type": "uint8", "description": "0 IDLE, 1 INTRO, 2 VERSE, 3 CHORUS, 4 OUTRO" },
+    { "name": "accentColor", "type": "uint8", "description": "Palette index (0-255) for synchronized screen flashes" }
+  ]
+}

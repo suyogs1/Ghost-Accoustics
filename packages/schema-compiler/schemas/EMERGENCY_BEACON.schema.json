@@ -1,0 +1,10 @@
+{
+  "name": "EMERGENCY_BEACON",
+  "opcode": "0x11",
+  "description": "Broadcast alert that every listener device must surface immediately.",
+  "fields": [
+    { "name": "alertId", "type": "uint16", "description": "Alert identifier (0-65535)" },
+    { "name": "severity", "type": "uint8", "description": "1 LOW, 2 MED, 3 CRITICAL" },
+    { "name": "batteryPct", "type": "uint8", "description": "Transmitter battery percentage (0-100)" }
+  ]
+}

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs and env
+*.log
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+
+# NOTE: /.kiro (steering, specs, hooks) MUST stay tracked for Kiroween.
+# Never add ".kiro" to this file. The rule below is a safety net.
+!/.kiro/
+!/.kiro/**
