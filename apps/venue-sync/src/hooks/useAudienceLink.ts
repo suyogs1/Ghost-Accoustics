@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AcousticSocket } from '@ghost-acoustics/core';
+import type { AcousticProfile, AcousticSocket } from '@ghost-acoustics/core';
 import { createAudienceLink } from '../link/links';
 import { decodeVenueFrame } from '../venue/decode';
 import type { ReceivedEvent } from '../venue/decode';
@@ -32,11 +32,12 @@ export interface AudienceControls {
   dismiss(): void;
 }
 
-export function useAudienceLink(loopback: boolean): AudienceControls {
+export function useAudienceLink(loopback: boolean, profile: AcousticProfile): AudienceControls {
   const socketRef = useRef<AcousticSocket | null>(null);
   const offRef = useRef<(() => void)[]>([]);
   const joiningRef = useRef<Promise<void> | null>(null);
   const loopbackRef = useRef(loopback);
+  const profileRef = useRef(profile);
 
   const [status, setStatus] = useState<AudienceStatus>('off');
   const [event, setEvent] = useState<ReceivedEvent | null>(null);
@@ -67,7 +68,7 @@ export function useAudienceLink(loopback: boolean): AudienceControls {
     setStatus('joining');
     setError(null);
     setStats(NO_STATS);
-    const socket = createAudienceLink({ loopback: loopbackRef.current, onWarning: setWarning });
+    const socket = createAudienceLink({ loopback: loopbackRef.current, profile: profileRef.current, onWarning: setWarning });
     socketRef.current = socket;
     offRef.current = [
       socket.on('packet', (frame) => {
@@ -102,6 +103,12 @@ export function useAudienceLink(loopback: boolean): AudienceControls {
       }
     }
   }, []);
+
+  // The receive filter follows the profile live, without rejoining.
+  useEffect(() => {
+    profileRef.current = profile;
+    socketRef.current?.setProfile(profile);
+  }, [profile]);
 
   // Switching transport drops the current session; the user rejoins explicitly.
   useEffect(() => {

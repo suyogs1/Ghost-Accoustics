@@ -19,6 +19,10 @@
       "types": "./src/airtime.ts",
       "default": "./src/airtime.ts"
     },
+    "./profile": {
+      "types": "./src/profile.ts",
+      "default": "./src/profile.ts"
+    },
     "./frame": {
       "types": "./src/frame.ts",
       "default": "./src/frame.ts"

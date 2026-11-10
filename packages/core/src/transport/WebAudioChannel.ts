@@ -1,4 +1,12 @@
+import { ACOUSTIC_PROFILES, DEFAULT_PROFILE } from '../profile';
+import type { AcousticProfile } from '../profile';
 import type { AcousticChannel, RxMeta } from './channel';
+import { HauntedMask } from './HauntedMask';
+
+/** Mask fade when the channel is used without a socket calling beginDrain(). */
+const DEFAULT_MASK_FADE_MS = 250;
+/** Never fade faster than this: an abrupt cut would click. */
+const MIN_MASK_FADE_MS = 100;
 
 /**
  * getUserMedia constraints mandated by .kiro/steering/02_audio_hardware_guards.md.
@@ -38,7 +46,9 @@ export interface WebAudioChannelOptions {
   readonly ggwaveFactory?: GgwaveFactory;
   /** Reuse an existing AudioContext (it is then not closed on stop). */
   readonly audioContext?: AudioContext;
-  /** ggwave protocol key, e.g. GGWAVE_PROTOCOL_AUDIBLE_FAST (the spike default). */
+  /** Transmission profile. Default 'audible-fast'. Switchable at runtime with setProfile(). */
+  readonly profile?: AcousticProfile;
+  /** Override the ggwave protocol key chosen by the profile (advanced). */
   readonly protocol?: string;
   /** ggwave volume, 0-100. Keep moderate: clipping adds harmonics. Default 25. */
   readonly volume?: number;
@@ -111,9 +121,14 @@ export class WebAudioChannel implements AcousticChannel {
   /** Smoothed RMS of quiet audio, used as the noise floor for SNR estimates. */
   private noiseRms = 0;
   private analyser: AnalyserNode | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+  private highpass: [BiquadFilterNode, BiquadFilterNode] | null = null;
+  private mask: HauntedMask | null = null;
+  private profile: AcousticProfile;
 
   constructor(private readonly options: WebAudioChannelOptions = {}) {
     this.warn = options.onWarning ?? ((m) => console.warn(`[ghost-acoustics] ${m}`));
+    this.profile = options.profile ?? DEFAULT_PROFILE;
     this.volume = options.volume ?? 25;
     this.outputDeviceId = options.outputDeviceId;
   }
@@ -133,6 +148,7 @@ export class WebAudioChannel implements AcousticChannel {
     params.sampleRateOut = ctx.sampleRate;
     this.instance = ggwave.init(params);
     this.ggwave = ggwave;
+    this.warnIfSampleRateTooLow(ctx);
 
     if (this.options.receive === false) return;
     await this.startCapture(ctx, onBytes);
@@ -183,11 +199,18 @@ export class WebAudioChannel implements AcousticChannel {
     };
     this.node = node;
 
-    // No voice filters in the receive chain: mic -> worklet -> silent sink.
+    // No voice filters in the audible receive chain: mic -> worklet -> silent sink.
+    // The ultrasound profile alone inserts a high-pass (see rewireReceive).
     const sink = ctx.createGain();
     sink.gain.value = 0;
     const source = ctx.createMediaStreamSource(this.stream);
-    source.connect(node);
+    this.source = source;
+    this.highpass = [ctx.createBiquadFilter(), ctx.createBiquadFilter()];
+    for (const filter of this.highpass) {
+      filter.type = 'highpass';
+      filter.Q.value = Math.SQRT1_2; // Butterworth; two in series = 4th order, ~24 dB/octave
+    }
+    this.rewireReceive();
     // Passive spectrum tap for visualisation; it changes nothing in the decode path.
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 4096;
@@ -198,6 +221,35 @@ export class WebAudioChannel implements AcousticChannel {
     this.analyser = analyser;
     node.connect(sink);
     sink.connect(ctx.destination);
+  }
+
+  /**
+   * Routes the microphone into the decoder. Audible profiles connect it straight through.
+   * Ultrasound inserts two cascaded high-pass BiquadFilterNodes below the lowest tone so
+   * room noise never reaches the decoder.
+   */
+  private rewireReceive(): void {
+    const { source, node, highpass } = this;
+    if (!source || !node || !highpass) return;
+    // disconnect(dest) throws if that exact edge does not exist yet; that is fine here.
+    for (const edge of [() => source.disconnect(node), () => source.disconnect(highpass[0])]) {
+      try {
+        edge();
+      } catch {
+        // Edge not present.
+      }
+    }
+    for (const filter of highpass) filter.disconnect();
+
+    const cutoff = ACOUSTIC_PROFILES[this.profile].receiveHighpassHz;
+    if (cutoff === null) {
+      source.connect(node);
+      return;
+    }
+    for (const filter of highpass) filter.frequency.value = cutoff;
+    source.connect(highpass[0]);
+    highpass[0].connect(highpass[1]);
+    highpass[1].connect(node);
   }
 
   private trackSignal(chunk: Float32Array, sampleRate: number, nowMs: number): void {
@@ -222,6 +274,12 @@ export class WebAudioChannel implements AcousticChannel {
   }
 
   async stop(): Promise<void> {
+    this.mask?.dispose();
+    this.mask = null;
+    this.source?.disconnect();
+    this.source = null;
+    this.highpass?.forEach((f) => f.disconnect());
+    this.highpass = null;
     this.node?.disconnect();
     this.node = null;
     this.analyser?.disconnect();
@@ -238,7 +296,8 @@ export class WebAudioChannel implements AcousticChannel {
     const ggwave = this.ggwave;
     if (!ctx || !ggwave) throw new Error('WebAudioChannel not started');
 
-    const protocolKey = this.options.protocol ?? 'GGWAVE_PROTOCOL_AUDIBLE_FAST';
+    const info = ACOUSTIC_PROFILES[this.profile];
+    const protocolKey = this.options.protocol ?? info.protocol;
     const protocol = ggwave.ProtocolId[protocolKey];
     if (protocol === undefined) throw new Error(`Unknown ggwave protocol ${protocolKey}`);
 
@@ -251,10 +310,43 @@ export class WebAudioChannel implements AcousticChannel {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    await new Promise<void>((resolve) => {
-      source.onended = () => resolve();
-      source.start();
-    });
+
+    // Haunted Mask: the spooky bed plays for exactly as long as the data does.
+    this.mask?.dispose();
+    this.mask = info.atmosphere ? new HauntedMask(ctx, 0.05 + (this.volume / 100) * 0.15) : null;
+    const mask = this.mask;
+    try {
+      await new Promise<void>((resolve) => {
+        source.onended = () => resolve();
+        mask?.start();
+        source.start();
+      });
+    } finally {
+      // Safety net if nobody calls beginDrain(); the socket's drain call shortens this.
+      mask?.fadeOut(DEFAULT_MASK_FADE_MS);
+    }
+  }
+
+  /** Playback is over and the half-duplex drain window has begun: settle the atmosphere inside it. */
+  beginDrain(durationMs: number): void {
+    this.mask?.fadeOut(Math.max(MIN_MASK_FADE_MS, durationMs));
+  }
+
+  setProfile(profile: AcousticProfile): void {
+    if (profile === this.profile) return;
+    this.profile = profile;
+    if (this.ctx) this.warnIfSampleRateTooLow(this.ctx);
+    this.rewireReceive();
+  }
+
+  getProfile(): AcousticProfile {
+    return this.profile;
+  }
+
+  private warnIfSampleRateTooLow(ctx: AudioContext): void {
+    if (ACOUSTIC_PROFILES[this.profile].ultrasound && ctx.sampleRate < 40_000) {
+      this.warn(`Silent Ghost needs a sample rate of at least 40 kHz; this device runs at ${ctx.sampleRate} Hz`);
+    }
   }
 
   muteInput(muted: boolean): void {

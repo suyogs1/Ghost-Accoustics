@@ -1,4 +1,5 @@
 import { AcousticSocket, LoopbackBus, WebAudioChannel, peerIdToByte } from '@ghost-acoustics/core';
+import type { AcousticProfile } from '@ghost-acoustics/core';
 import { loadGgwave } from './ggwaveLoader';
 
 const STAGE_PEER_ID = 'stage';
@@ -16,6 +17,7 @@ export interface StageLinkOptions {
   readonly loopback: boolean;
   readonly volume: number;
   readonly outputDeviceId: string | undefined;
+  readonly profile: AcousticProfile;
   readonly onWarning: (message: string) => void;
 }
 
@@ -29,6 +31,7 @@ export function createStageLink(options: StageLinkOptions): StageLink {
     const socket = new AcousticSocket({
       peerId: STAGE_PEER_ID,
       mode: 'loopback',
+      profile: options.profile,
       loopback: { bus: loopbackBus, simulateAirtime: true },
     });
     return { socket, audio: null };
@@ -36,15 +39,17 @@ export function createStageLink(options: StageLinkOptions): StageLink {
   const audio = new WebAudioChannel({
     ggwaveFactory: loadGgwave,
     receive: false,
+    profile: options.profile,
     volume: options.volume,
     ...(options.outputDeviceId !== undefined ? { outputDeviceId: options.outputDeviceId } : {}),
     onWarning: options.onWarning,
   });
-  return { socket: new AcousticSocket({ peerId: STAGE_PEER_ID, mode: 'live', channel: audio }), audio };
+  return { socket: new AcousticSocket({ peerId: STAGE_PEER_ID, mode: 'live', profile: options.profile, channel: audio }), audio };
 }
 
 export interface AudienceLinkOptions {
   readonly loopback: boolean;
+  readonly profile: AcousticProfile;
   readonly onWarning: (message: string) => void;
 }
 
@@ -56,8 +61,8 @@ export function createAudienceLink(options: AudienceLinkOptions): AcousticSocket
     peerId = `audience-${Math.random().toString(36).slice(2, 8)}`;
   } while (peerIdToByte(peerId) === peerIdToByte(STAGE_PEER_ID));
   if (options.loopback) {
-    return new AcousticSocket({ peerId, mode: 'loopback', loopback: { bus: loopbackBus } });
+    return new AcousticSocket({ peerId, mode: 'loopback', profile: options.profile, loopback: { bus: loopbackBus } });
   }
-  const audio = new WebAudioChannel({ ggwaveFactory: loadGgwave, onWarning: options.onWarning });
-  return new AcousticSocket({ peerId, mode: 'live', channel: audio });
+  const audio = new WebAudioChannel({ ggwaveFactory: loadGgwave, profile: options.profile, onWarning: options.onWarning });
+  return new AcousticSocket({ peerId, mode: 'live', profile: options.profile, channel: audio });
 }

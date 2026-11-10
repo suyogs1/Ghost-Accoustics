@@ -1,5 +1,6 @@
 export * from './constants';
 export * from './airtime';
+export * from './profile';
 export { crc32 } from './crc32';
 export { encodeFrame, decodeFrame, peerIdToByte, FrameError } from './frame';
 export type { Frame, FrameErrorCode, DecodeResult, EncodeOptions } from './frame';

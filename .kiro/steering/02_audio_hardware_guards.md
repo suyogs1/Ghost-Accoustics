@@ -20,7 +20,14 @@ const constraints: MediaStreamConstraints = {
 
 - Never rely on browser defaults. Never omit a flag.
 - After acquiring the stream, read `track.getSettings()` and log a warning if any of the three flags is still `true`. Some browsers ignore constraints.
-- Do not insert voice-oriented filters (compressors, gates, high-pass) in the receive chain.
+- Do not insert voice-oriented filters (compressors, gates, high-pass) in the audible receive chain.
+- The one exception is the ultrasound (`silent-ghost`) profile, which cascades two high-pass `BiquadFilterNode`s at 14 kHz to reject room noise. The cutoff must stay below the lowest data tone (about 15.0 kHz); never raise it into the carrier band.
+
+## Transmission profiles
+
+- Profiles are defined in `packages/core/src/profile.ts`; carrier bands there were measured from the encoder, not assumed.
+- Sender and receiver must select the same profile. An ultrasound receiver filters out audible frames.
+- The haunted-atmosphere mask must stay below the data tones (300-800 Hz), must start and stop with the data, and must fade out inside the half-duplex drain window so it never outlasts the muted-input period.
 
 ## Half-duplex discipline
 

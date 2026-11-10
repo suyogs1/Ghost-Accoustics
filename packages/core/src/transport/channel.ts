@@ -1,3 +1,5 @@
+import type { AcousticProfile } from '../profile';
+
 /** Optional receive-side measurements a channel can attach to a decoded frame. */
 export interface RxMeta {
   /** Time from first detected signal energy to successful decode, in seconds. */
@@ -26,4 +28,8 @@ export interface AcousticChannel {
   outputLatencyMs?(): number;
   /** Spectrum tap on the capture path, for visualisation. Null until started or when not capturing. */
   getAnalyser?(): AnalyserNode | null;
+  /** Switch transmission profile (modulation band, receive filter, atmosphere). */
+  setProfile?(profile: AcousticProfile): void;
+  /** Called as soon as playback ends; the channel should settle audio effects within durationMs. */
+  beginDrain?(durationMs: number): void;
 }

@@ -640,3 +640,122 @@ input[type='range'] {
     animation: none;
   }
 }
+
+/* ---- transmission profile ---- */
+select {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #090c12;
+  color: var(--fg);
+  font: inherit;
+}
+
+select:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.profile .hint {
+  margin: 8px 0 0;
+}
+
+.profile.is-haunted {
+  border-color: rgba(168, 255, 120, 0.55);
+  box-shadow: 0 0 0 1px rgba(150, 90, 255, 0.35), 0 0 22px rgba(150, 90, 255, 0.22);
+}
+
+.haunted-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #b8ff8f;
+}
+
+.ghost {
+  flex: none;
+  color: #e6fbd6;
+  filter: drop-shadow(0 0 6px rgba(168, 255, 120, 0.7));
+  animation: float 3.4s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(1px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.chip-haunted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #b8ff8f;
+  border-color: rgba(168, 255, 120, 0.6);
+  background: rgba(70, 30, 130, 0.45);
+}
+
+.waterfall.is-haunted {
+  border-color: rgba(168, 255, 120, 0.5);
+  box-shadow: 0 0 26px rgba(120, 60, 220, 0.28);
+}
+
+.waterfall.is-haunted .waterfall-frame {
+  border-color: rgba(168, 255, 120, 0.45);
+}
+
+/* Drifting fog over the spectrogram while the Haunted Mask is on. */
+.mist {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 60% at 15% 90%, rgba(150, 90, 255, 0.22), transparent 70%),
+    radial-gradient(40% 55% at 85% 20%, rgba(168, 255, 120, 0.14), transparent 70%);
+  animation: mist 12s ease-in-out infinite alternate;
+}
+
+@keyframes mist {
+  from {
+    transform: translateX(-4%);
+    opacity: 0.65;
+  }
+  to {
+    transform: translateX(4%);
+    opacity: 1;
+  }
+}
+
+.band-carrier.is-ultrasound {
+  border-color: rgba(190, 140, 255, 0.8);
+  background: rgba(150, 90, 255, 0.07);
+}
+
+.band-carrier.is-ultrasound .band-label {
+  color: #d6b8ff;
+}
+
+.band-mask {
+  background: rgba(168, 255, 120, 0.08);
+  border-left: 1px dotted rgba(168, 255, 120, 0.7);
+  border-right: 1px dotted rgba(168, 255, 120, 0.7);
+}
+
+.band-label-mask {
+  top: 6px;
+  color: #b8ff8f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost,
+  .mist {
+    animation: none;
+  }
+}

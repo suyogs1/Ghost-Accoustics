@@ -11,6 +11,8 @@ import {
 } from '../constants';
 import { decodeFrame, encodeFrame, peerIdToByte } from '../frame';
 import type { Frame, FrameErrorCode } from '../frame';
+import { DEFAULT_PROFILE } from '../profile';
+import type { AcousticProfile } from '../profile';
 import type { AcousticChannel, RxMeta } from './channel';
 import { LoopbackChannel } from './LoopbackChannel';
 import type { LoopbackChannelOptions } from './LoopbackChannel';
@@ -100,6 +102,8 @@ export interface AcousticSocketOptions {
   /** Use this exact wire address (1..255) instead of hashing `peerId`. */
   readonly peerByte?: number;
   readonly mode: SocketMode;
+  /** Transmission profile: audible, near-ultrasound or haunted-atmosphere. Default 'audible-fast'. */
+  readonly profile?: AcousticProfile;
   /** Inject a custom channel (overrides `mode`'s default channel). */
   readonly channel?: AcousticChannel;
   readonly loopback?: LoopbackChannelOptions;
@@ -158,6 +162,7 @@ export class AcousticSocket extends TypedEmitter<SocketEvents> {
   private readonly ackTurnaroundPadMs: number;
 
   private linkState: LinkState = 'IDLE';
+  private currentProfile: AcousticProfile;
   private running = false;
   private seq: number;
   private drops = 0;
@@ -184,11 +189,14 @@ export class AcousticSocket extends TypedEmitter<SocketEvents> {
     this.dedupWindowMs = options.dedupWindowMs ?? 30_000;
     this.ackTurnaroundPadMs = options.ackTurnaroundPadMs ?? 100;
     this.seq = Math.floor(Math.random() * 256);
+    this.currentProfile = options.profile ?? DEFAULT_PROFILE;
     this.channel =
       options.channel ??
       (options.mode === 'live'
-        ? new WebAudioChannel(options.webAudio)
+        ? new WebAudioChannel({ ...options.webAudio, profile: this.currentProfile })
         : new LoopbackChannel(options.loopback));
+    // Only push a profile into an injected channel when one was asked for; otherwise leave its own.
+    if (options.profile !== undefined) this.channel.setProfile?.(this.currentProfile);
   }
 
   get state(): LinkState {
@@ -198,6 +206,19 @@ export class AcousticSocket extends TypedEmitter<SocketEvents> {
   /** Frames heard while transmitting/draining (self-interference). */
   get selfInterferenceDrops(): number {
     return this.drops;
+  }
+
+  get profile(): AcousticProfile {
+    return this.currentProfile;
+  }
+
+  /**
+   * Switch profile at runtime. Sender and receiver must use the same band: an ultrasound
+   * receiver filters out audible frames, and vice versa.
+   */
+  setProfile(profile: AcousticProfile): void {
+    this.currentProfile = profile;
+    this.channel.setProfile?.(profile);
   }
 
   /** Spectrum tap on the capture path (live mode, once started); null otherwise. */
@@ -300,7 +321,9 @@ export class AcousticSocket extends TypedEmitter<SocketEvents> {
         };
       } finally {
         this.setState('DRAINING');
-        await sleep(this.drainMs + (this.channel.outputLatencyMs?.() ?? 0));
+        const drainMs = this.drainMs + (this.channel.outputLatencyMs?.() ?? 0);
+        this.channel.beginDrain?.(drainMs);
+        await sleep(drainMs);
         this.channel.muteInput(false);
         this.setState(this.running ? 'LISTENING' : 'IDLE');
       }

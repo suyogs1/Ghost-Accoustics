@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Schema created: compile, budget check, PBT",
+      "trigger": "PostFileCreate",
+      "description": "Runs ghostc compile, verifies every frame fits 32 bytes, and runs the property-based test suite when a new .schema.json appears.",
+      "matcher": "\\.schema\\.json$",
+      "action": {
+        "type": "command",
+        "command": "bash .kiro/hooks/on-schema-change-pbt.sh",
+        "timeout": 300
+      }
+    }
+  ]
+}

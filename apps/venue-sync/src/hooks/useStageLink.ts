@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LinkState } from '@ghost-acoustics/core';
+import type { AcousticProfile, LinkState } from '@ghost-acoustics/core';
 import { Opcode, OPCODE_REGISTRY } from '@ghost-acoustics/schema-compiler/generated/opcodes';
 import {
   EMERGENCY_BEACON_PAYLOAD_BYTES,
@@ -66,13 +66,19 @@ export interface StageControls {
   clearError(): void;
 }
 
-export function useStageLink(loopback: boolean, volume: number, outputDeviceId: string | undefined): StageControls {
+export function useStageLink(
+  loopback: boolean,
+  volume: number,
+  outputDeviceId: string | undefined,
+  profile: AcousticProfile,
+): StageControls {
   const linkRef = useRef<StageLink | null>(null);
   const startRef = useRef<Promise<void> | null>(null);
   const estimateRef = useRef(0);
   const labelRef = useRef('');
   const volumeRef = useRef(volume);
   const outputRef = useRef(outputDeviceId);
+  const profileRef = useRef(profile);
 
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -90,6 +96,7 @@ export function useStageLink(loopback: boolean, volume: number, outputDeviceId: 
       loopback,
       volume: volumeRef.current,
       outputDeviceId: outputRef.current,
+      profile: profileRef.current,
       onWarning: setWarning,
     });
     linkRef.current = link;
@@ -137,6 +144,11 @@ export function useStageLink(loopback: boolean, volume: number, outputDeviceId: 
       void pending.catch(() => undefined).then(() => link.socket.stop());
     };
   }, [loopback]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+    linkRef.current?.socket.setProfile(profile);
+  }, [profile, loopback]);
 
   useEffect(() => {
     volumeRef.current = volume;

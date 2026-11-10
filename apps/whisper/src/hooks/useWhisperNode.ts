@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AcousticSocket, LoopbackChannel, WebAudioChannel } from '@ghost-acoustics/core';
-import type { LinkState, LoopbackBus } from '@ghost-acoustics/core';
+import type { AcousticProfile, LinkState, LoopbackBus } from '@ghost-acoustics/core';
 import { Opcode } from '@ghost-acoustics/schema-compiler/generated/opcodes';
 import {
   WHISPER_MSG_PAYLOAD_BYTES,
@@ -80,6 +80,7 @@ export interface NodeOptions {
   readonly lossPercent: number;
   /** Live only: transmit volume 0..100. */
   readonly volume: number;
+  readonly profile: AcousticProfile;
 }
 
 export interface WhisperNode {
@@ -112,6 +113,7 @@ export function useWhisperNode(options: NodeOptions): WhisperNode {
   const liveRef = useRef<WebAudioChannel | null>(null);
   const loopRef = useRef<LoopbackChannel | null>(null);
   const targetRef = useRef(options.targetId);
+  const profileRef = useRef(options.profile);
   const nodeIdRef = useRef(nodeId);
   const activeIdRef = useRef<string | null>(null);
   const counterRef = useRef(0);
@@ -128,6 +130,12 @@ export function useWhisperNode(options: NodeOptions): WhisperNode {
   useEffect(() => {
     targetRef.current = options.targetId;
   }, [options.targetId]);
+
+  useEffect(() => {
+    profileRef.current = options.profile;
+    socketRef.current?.setProfile(options.profile);
+    spectrum.setProfile(options.profile);
+  }, [options.profile, spectrum, kind, nodeId, enabled]);
 
   const patch = useCallback((id: string, changes: Partial<ChatMessage>) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...changes } : m)));
@@ -150,7 +158,7 @@ export function useWhisperNode(options: NodeOptions): WhisperNode {
     let live: WebAudioChannel | null = null;
     let loop: LoopbackChannel | null = null;
     if (kind === 'live') {
-      live = new WebAudioChannel({ ggwaveFactory: loadGgwave, onWarning: setWarning });
+      live = new WebAudioChannel({ ggwaveFactory: loadGgwave, profile: profileRef.current, onWarning: setWarning });
     } else {
       // simulateAirtime: the packet really takes its airtime, so the countdown and RTT are honest.
       loop = new LoopbackChannel({ bus, simulateAirtime: true });
@@ -162,6 +170,7 @@ export function useWhisperNode(options: NodeOptions): WhisperNode {
       peerId: `${name}-${nodeId}`,
       peerByte: nodeId,
       mode: kind,
+      profile: profileRef.current,
       channel: (live ?? loop)!,
     });
     socketRef.current = socket;

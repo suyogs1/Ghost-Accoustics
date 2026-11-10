@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Schema saved: compile, budget check, PBT",
+      "trigger": "PostFileSave",
+      "description": "Same checks as on-schema-created-pbt, for edits to an existing .schema.json.",
+      "matcher": "\\.schema\\.json$",
+      "action": {
+        "type": "command",
+        "command": "bash .kiro/hooks/on-schema-change-pbt.sh",
+        "timeout": 300
+      }
+    }
+  ]
+}

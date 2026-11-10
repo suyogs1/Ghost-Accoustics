@@ -10,6 +10,7 @@ import { checkAirtimeBudget } from './airtime';
 import { inspectPacketCapture } from './inspect';
 import { simulateChannelNoise } from './noise';
 import { runPbtSuite } from './pbt';
+import { SCAFFOLD_TYPES, generateSchemaScaffold } from './scaffold';
 
 type ToolResult = {
   content: { type: 'text'; text: string }[];
@@ -90,6 +91,46 @@ server.registerTool(
   async ({ rawHex }) => {
     try {
       return ok(inspectPacketCapture(rawHex));
+    } catch (err) {
+      return fail(err);
+    }
+  },
+);
+
+server.registerTool(
+  'generate_schema_scaffold',
+  {
+    title: 'Generate schema scaffold',
+    description:
+      'Create a new message schema file in packages/schema-compiler/schemas from a field list, check it against ' +
+      'the airtime budget (32 bytes / 4.0 s per frame) and return the frame metrics, warnings and fixes. ' +
+      'Over-budget schemas are NOT written. After a file is written run `pnpm compile` to generate the serializers. ' +
+      'Field types: uint8, uint16, uint32, uint (needs bits), boolean, quantizedInt (needs min, max, bits), bytes (needs maxLength, must be last).',
+    inputSchema: {
+      schemaName: z.string().min(1).max(40).describe('SCREAMING_SNAKE_CASE message name, e.g. SCORE_UPDATE'),
+      opcode: z.number().int().min(0x10).max(0xff).describe('Application opcode, 0x10-0xFF, unique across schemas'),
+      fields: z
+        .array(
+          z.object({
+            name: z.string().min(1).max(40).describe('camelCase field name'),
+            type: z.enum(SCAFFOLD_TYPES),
+            bits: z.number().int().min(1).max(32).optional().describe('Wire width for uint / quantizedInt; narrows uint8/16/32 when smaller'),
+            min: z.number().optional().describe('quantizedInt lower bound'),
+            max: z.number().optional().describe('quantizedInt upper bound'),
+            maxLength: z.number().int().min(1).max(52).optional().describe('bytes: maximum length'),
+            description: z.string().max(200).optional(),
+          }),
+        )
+        .max(64),
+      description: z.string().max(300).optional(),
+      dryRun: z.boolean().optional().describe('Validate and report without writing the file'),
+      overwrite: z.boolean().optional().describe('Replace an existing schema file of the same name'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  async (input) => {
+    try {
+      return ok(generateSchemaScaffold(input));
     } catch (err) {
       return fail(err);
     }

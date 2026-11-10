@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { DEFAULT_PROFILE } from '@ghost-acoustics/core/profile';
+import type { AcousticProfile } from '@ghost-acoustics/core/profile';
 import { AudiencePanel } from './components/AudiencePanel';
 import { EmergencyOverlay } from './components/EmergencyOverlay';
+import { ProfileSelector } from './components/ProfileSelector';
 import { StagePanel } from './components/StagePanel';
 import { useAudienceLink } from './hooks/useAudienceLink';
 import { useStageLink } from './hooks/useStageLink';
@@ -15,9 +18,10 @@ export function App() {
   const [loopback, setLoopback] = useState(false);
   const [volume, setVolume] = useState(50);
   const [outputDeviceId, setOutputDeviceId] = useState<string | undefined>(undefined);
+  const [profile, setProfile] = useState<AcousticProfile>(DEFAULT_PROFILE);
 
-  const stage = useStageLink(loopback, volume, outputDeviceId);
-  const audience = useAudienceLink(loopback);
+  const stage = useStageLink(loopback, volume, outputDeviceId, profile);
+  const audience = useAudienceLink(loopback, profile);
   const { status: audienceStatus, join: joinAudience, leave: leaveAudience } = audience;
 
   // Loopback: the stage screen carries a live audience preview, so a solo judge sees both ends.
@@ -42,7 +46,7 @@ export function App() {
   const effect = cueEvent ? effectForState(cueEvent.cue.stageState) : 'none';
 
   return (
-    <div className={`app role-${role} ${accent !== null ? 'has-accent' : ''}`} style={style}>
+    <div className={`app role-${role} ${accent !== null ? 'has-accent' : ''} profile-${profile}`} style={style}>
       {/* Re-keyed per frame so the effect replays even when the same cue arrives twice. */}
       {effect !== 'none' && <div key={audience.eventCount} className={`fx fx-${effect}`} aria-hidden="true" />}
 
@@ -67,6 +71,7 @@ export function App() {
       </header>
 
       <main className="main">
+        <ProfileSelector profile={profile} onChange={setProfile} />
         {role === 'stage' ? (
           <StagePanel
             stage={stage}

@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { LoopbackBus } from '@ghost-acoustics/core';
+import { DEFAULT_PROFILE } from '@ghost-acoustics/core/profile';
+import type { AcousticProfile } from '@ghost-acoustics/core/profile';
 import { NodePane } from './components/NodePane';
+import { ProfileSelector } from './components/ProfileSelector';
 import { SimulatedSpectrum } from './components/spectrum';
 import { WaterfallCanvas } from './components/WaterfallCanvas';
 import { useWhisperNode } from './hooks/useWhisperNode';
@@ -15,6 +18,7 @@ export function App() {
   const [liveTarget, setLiveTarget] = useState(BOB_ID);
   const [volume, setVolume] = useState(50);
   const [lossPercent, setLossPercent] = useState(0);
+  const [profile, setProfile] = useState<AcousticProfile>(DEFAULT_PROFILE);
 
   // One in-memory "room" and one simulated spectrum shared by both simulated nodes.
   const bus = useMemo(() => new LoopbackBus(), []);
@@ -31,6 +35,7 @@ export function App() {
     spectrum,
     lossPercent,
     volume,
+    profile,
   });
   const right = useWhisperNode({
     name: 'bob',
@@ -42,10 +47,11 @@ export function App() {
     spectrum,
     lossPercent,
     volume,
+    profile,
   });
 
   return (
-    <div className="app">
+    <div className={`app profile-${profile}`}>
       <label className="loopback-switch" title="Two simulated nodes in this tab, no sound needed">
         <input type="checkbox" checked={loopback} onChange={(e) => setLoopback(e.target.checked)} />
         <span>Loopback Simulation</span>
@@ -58,8 +64,11 @@ export function App() {
 
       <main className="main">
         <WaterfallCanvas
+          profile={profile}
           {...(loopback ? { source: spectrum, simulated: true } : { analyser: left.analyser })}
         />
+
+        <ProfileSelector profile={profile} onChange={setProfile} />
 
         <section className="card channel" aria-label="Channel settings">
           {loopback ? (

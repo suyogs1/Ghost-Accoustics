@@ -691,3 +691,75 @@ input[type='range'] {
     transition: none;
   }
 }
+
+/* ---- transmission profile ---- */
+.profile {
+  margin-bottom: 14px;
+}
+
+.profile .field {
+  margin-bottom: 0;
+}
+
+.profile.is-haunted {
+  border-color: rgba(168, 255, 120, 0.55);
+  box-shadow: 0 0 0 1px rgba(150, 90, 255, 0.35), 0 0 22px rgba(150, 90, 255, 0.22);
+}
+
+.haunted-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #b8ff8f;
+}
+
+.ghost {
+  flex: none;
+  color: #e6fbd6;
+  filter: drop-shadow(0 0 6px rgba(168, 255, 120, 0.7));
+  animation: float 3.4s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(1px);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Slow drifting mist over the whole page while the Haunted Mask is selected. */
+.app.profile-haunted-atmosphere::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 20% 85%, rgba(150, 90, 255, 0.16), transparent 70%),
+    radial-gradient(50% 35% at 80% 15%, rgba(168, 255, 120, 0.1), transparent 70%);
+  animation: mist 14s ease-in-out infinite alternate;
+}
+
+@keyframes mist {
+  from {
+    transform: translate3d(-3%, 2%, 0);
+    opacity: 0.7;
+  }
+  to {
+    transform: translate3d(3%, -2%, 0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost,
+  .app.profile-haunted-atmosphere::after {
+    animation: none;
+  }
+}
